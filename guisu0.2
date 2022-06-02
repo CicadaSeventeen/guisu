@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+trap 'onCtrlC' INT
+function onCtrlC () {
+    echo $$
+    [ -e $XDG_RUNTIME_DIR/guisu/$$ ] && rm -rf $XDG_RUNTIME_DIR/guisu/$$
+    exit 0
+}
+
+function runsu(){
+PID=$$
+PWD=`pwd`
+OLDPATH=$PATH
+RUNPATH=$XDG_RUNTIME_DIR/guisu/$PID
+FIFOPATH=$RUNPATH/fifo
+BASHPATH=$RUNPATH/$COMMAND_NAME
+[ -d $XDG_RUNTIME_DIR/guisu ] || mkdir -p $XDG_RUNTIME_DIR/guisu
+if [ -e $RUNPATH ]
+then
+    rm -rf $RUNPATH
+fi
+mkdir -p $RUNPATH
+touch $FIFOPATH
+touch $BASHPATH
+echo '#!/usr/bin/env bash'>>$BASHPATH
+echo "bash -c \"source $FIFOPATH;PATH=$OLDPATH;cd $PWD;$REALCOMMAND\"">>$BASHPATH
+echo 'exit 0'>>$BASHPATH
+chmod 755 $BASHPATH
+export > "$FIFOPATH" &
+PATH=$RUNPATH:$PATH
+pkexec $COMMAND_NAME
+rm -rf $RUNPATH
+}
+
+FLAG=0;
+COUNT=1;
+COMMAND=$*
+COMMAND_NAME=$1
+REALCOMMAND=$COMMAND
+VERSION=1.0
+GUISUHOME=https://github.com/djypku/guisu
+if [ ! $1 ]
+then
+        echo "guisu based on pkexec (polkit)"
+        echo "usage"
+        pkexec --help 2>&1 | sed '0,/pkexec/{s//guisu/}' | sed '0,/pkexec/{s//pkexec and guisu/}' | sed 's#http://lists.freedesktop.org/mailman/listinfo/polkit-devel#<'''$GUISUHOME'''>#g#'
+        echo "guisu home page: <$GUISUHOME>"
+        exit 0
+fi
+if [ $1 == "--help" ]
+then
+    echo "guisu based on pkexec (polkit)"
+    echo "usage"
+    pkexec --help 2>&1 | sed '0,/pkexec/{s//guisu/}' | sed '0,/pkexec/{s//pkexec and guisu/}' | sed 's#http://lists.freedesktop.org/mailman/listinfo/polkit-devel#<'''$GUISUHOME'''>#g#'
+    echo "guisu home page: <$GUISUHOME>"
+    exit 0
+elif [ $1 == "--version" ]
+then
+    echo "guisu version $VERSION"
+    pkexec --version
+    exit 0
+fi
+while [ $FLAG -eq 0 ]
+do
+    if [ $COUNT -gt $# ]
+    then
+        echo "No command found"
+        exit 0
+    fi
+    TEM=${!COUNT}
+    if [ ${TEM:0:1} == "-" ]
+    then
+        if [ $TEM != "--user" ]&&[ $TEM != "--disable-internal-agent" ]
+        then
+            echo "Parameter Error. Please use --help to see helps."
+            exit 0
+        fi
+        COUNT=$[$COUNT+1]
+        REALCOMMAND=${REALCOMMAND#*' '}
+        if [ $TEM == "--user" ]
+        then
+            COUNT=$[$COUNT+1]
+            REALCOMMAND=${REALCOMMAND#*' '}
+        fi
+        COMMAND_NAME=${!COUNT}
+    else
+        FLAG=1
+    fi
+done
+runsu $*
+exit 0
